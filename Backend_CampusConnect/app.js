@@ -24,6 +24,10 @@ app.use(cookieParser());
 // Import routes
 // Example: import authRoutes from "./routes/auth.routes.js";
 // app.use("/api/v1/auth", authRoutes);
+import userroutes from "./routes/user.routes.js";
+// declaration
+app.use("/api/v1/user", userroutes)
+
 
 app.use("/", (req, res) => {
   res.send("CampusConnect Backend API is running ");
