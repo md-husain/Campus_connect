@@ -3,7 +3,7 @@ import fs from "fs";
 
 const uploadPath = "public/temp";
 fs.mkdirSync(uploadPath, { recursive:true});
-const stroage = multer.diskStorage({
+const storage = multer.diskStorage({
     destination:function(req,file,callback){
        callback(null,uploadPath)
     },

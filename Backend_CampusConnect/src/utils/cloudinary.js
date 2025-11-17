@@ -10,7 +10,7 @@ cloudinary.config({
 
 // Method to upload from local server to Cloudinary
 
-const UploadOnCloudinary = async (localfilepath)=>{
+const uploadonCloudinary = async (localfilepath)=>{
     try {
         if(!localfilepath)return null;
         // upload file on cloudinary
@@ -20,6 +20,7 @@ const UploadOnCloudinary = async (localfilepath)=>{
         console.log("File uploaded successfully to Cloudinary",response.url)
          // Delete the local file after successful upload
         fs.unlinkSync(localfilepath);
+        return response;
     } catch (error) {
     // Delete the file even if upload fails to avoid leftover junk
     if(fs.existsSync(localfilepath)){
@@ -30,4 +31,4 @@ const UploadOnCloudinary = async (localfilepath)=>{
     }
 }
 
-export {UploadOnCloudinary}
+export {uploadonCloudinary}

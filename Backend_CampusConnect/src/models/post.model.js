@@ -5,16 +5,18 @@ const postSchema = new mongoose.Schema({
             type:String,
             required:true
         },
+        title: {
+            type: String,
+            default: ""
+        },
          media:{
             type:String, //image/video URL
         },
-        owner:[
-        {
+        owner:{
             type:mongoose.Schema.Types.ObjectId,
             ref:'User',
             required:true
-        }
-    ],
+        },
          tags:[String], // #fun #exam #notice
           likes:[
           {
@@ -28,7 +30,7 @@ const postSchema = new mongoose.Schema({
             ref:'Comment',
         }
     ],
-         
+        
         
 },{ timestamps: true })
 

@@ -5,19 +5,16 @@ const commentSchema = new mongoose.Schema({
             type:String,
             required:true
         },
-        post:[
-        {
+        post:{
+            type:mongoose.Schema.Types.ObjectId,
+            ref:'Post',
+            required:true
+        },
+         owner:{
             type:mongoose.Schema.Types.ObjectId,
             ref:'User',
             required:true
         }
-    ],
-         owner:[
-         {
-            type:mongoose.Schema.Types.ObjectId,
-            ref:'User',
-        }
-    ],
          
         
 },{ timestamps: true })

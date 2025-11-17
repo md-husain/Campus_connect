@@ -22,7 +22,8 @@ const userSchema = new mongoose.Schema({
         type:String,
         required:true,
         unique:true,
-
+        trim:true,
+        lowercase:true, // Normalize email to lowercase
     },
     password:{
         type:String,
@@ -34,7 +35,7 @@ const userSchema = new mongoose.Schema({
     },
      avatar:{
         type:String,
-        required:true,
+        default: 'https://ui-avatars.com/api/?name=User&background=2563eb&color=fff'
     },
      coverimage: {
             type : String, //cloudinary url

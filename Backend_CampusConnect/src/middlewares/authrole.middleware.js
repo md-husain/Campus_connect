@@ -7,3 +7,5 @@ const authorizeRoles = (...roles) => (req, res, next) => {
     }
     next();
 };
+
+export { authorizeRoles };

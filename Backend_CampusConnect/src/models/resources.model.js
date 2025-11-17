@@ -8,10 +8,11 @@ const resourceSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  course: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Course'
-  }
+  // Temporarily remove course reference until Course model is properly registered
+  // course: {
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: 'Course'
+  // }
 }, { timestamps: true });
 
 export default mongoose.model('Resource', resourceSchema);

@@ -14,20 +14,29 @@ import {
     searchUsers
  } from "../controllers/user.controller.js";
  import { loginRateLimiter, registerRateLimiter } from "../middlewares/ratelimit.middleware.js";
-import upload from "../middlewares/mullter_middlewares.js";
+import {upload} from "../middlewares/mullter_middlewares.js";
 
 const router = Router();
 //user router
+router.get("/ping", (req, res) => {
+  res.status(200).json({ message: "✅ User route working fine!" });
+});
 
+// router.post(
+//   "/register_user",
+//   registerRateLimiter,
+//   upload.fields([
+//     { name: "avatar", maxCount: 1 },
+//     { name: "coverimage", maxCount: 1 }
+//   ]),
+//   registerUser
+// )
 router.post(
   "/register_user",
   registerRateLimiter,
-  upload.fields([
-    { name: "avatar", maxCount: 1 },
-    { name: "coverimage", maxCount: 1 }
-  ]),
   registerUser
 );
+
 // User Login
 router.post("/login_user", loginRateLimiter, LoginUser);
 // User Logout
@@ -56,6 +65,6 @@ router.route("/get_all_users").get(
     getAllUsers
 )
 
-router.get("/search_users", VerifyJWT, authorizeRoles("Admin"), searchUsers);
+router.get("/search_users", VerifyJWT, authorizeRoles("admin"), searchUsers);
 
 export default router;

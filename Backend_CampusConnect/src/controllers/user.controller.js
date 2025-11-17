@@ -1,9 +1,12 @@
 import { User } from "../models/users.model.js";
-import ApiError from "../utils/ApiError.js";
-import Apiresponse from "../utils/ApiResponse.js";
-import asyncHandler, { asynchandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ApiResponse} from "../utils/ApiResponse.js";
+import  { asynchandler } from "../utils/asyncHandler.js";
 import { uploadonCloudinary } from "../utils/cloudinary.js";
-import VerifyJWT from "../middlewares/auth.middleware.js";
+import {VerifyJWT} from "../middlewares/auth.middleware.js";
+import jwt from "jsonwebtoken";
+import fs from 'fs';
+import path from 'path';
 
 // a sep method to genrate access and refresh token(widely used in auth)
 const genrateaccessandrefreshtoken = async (userid) =>{
@@ -21,7 +24,11 @@ const genrateaccessandrefreshtoken = async (userid) =>{
 
 
         // return both tokens
-        return { accesstoken,refreshtoken}
+          return {
+      accessToken: accesstoken,
+      refreshToken: refreshtoken
+    };
+
         
     } catch (e) {
         throw new ApiError(500, "Internal Server Error while generating tokens")
@@ -29,59 +36,73 @@ const genrateaccessandrefreshtoken = async (userid) =>{
 }
 
 // @desc    Register a new user
-// @desc    Register a new user
-const registerUser = asyncHandler(async (req, res) => {
+const registerUser = asynchandler(async (req, res) => {
+  console.log("📥 Register API hit");
+  console.log("📥 Request body:", req.body);
+
   const { email, username, fullname, password, bio, department, role } = req.body;
 
-  // 1. Validate common fields
-  if (!email || !username || !fullname || !password || !department || !role) {
-    throw new ApiError(400, "All fields including role are required");
+  // 1. Validate common fields with detailed error messages
+  if (!email) {
+    throw new ApiError(400, "Email is required");
+  }
+  if (!username) {
+    throw new ApiError(400, "Username is required");
+  }
+  if (!fullname) {
+    throw new ApiError(400, "Full name is required");
+  }
+  if (!password) {
+    throw new ApiError(400, "Password is required");
+  }
+  if (!department) {
+    throw new ApiError(400, "Department is required");
+  }
+  if (!role) {
+    throw new ApiError(400, "Role is required");
   }
 
   // 2. Validate role value
   const allowedRoles = ["Student", "Faculty", "Admin"];
   if (!allowedRoles.includes(role)) {
-    throw new ApiError(400, "Invalid role selected");
+    throw new ApiError(400, `Invalid role selected. Must be one of: ${allowedRoles.join(', ')}`);
   }
 
-  // 3. Role-specific validation (example: bio is required for Student only)
-  if (role === "Student" && !bio) {
+  // 3. Role-specific validation
+  if (role === "Student" && (!bio || !bio.trim())) {
     throw new ApiError(400, "Bio is required for Students");
   }
-  if (role === "Faculty" && !bio) {
+  if (role === "Faculty" && (!bio || !bio.trim())) {
     throw new ApiError(400, "Faculty must add bio/qualification");
   }
 
-  // 4. Check if user already exists
-  const existUser = await User.findOne({ email });
-  if (existUser) {
+  // 4. Normalize email and username before checking
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedUsername = username.trim().toLowerCase();
+
+  // 5. Check if user already exists (case-insensitive)
+  const existUserByEmail = await User.findOne({ 
+    email: normalizedEmail 
+  });
+  if (existUserByEmail) {
     throw new ApiError(400, "User already exists with this email");
   }
 
-  // 5. Handle image uploads
-  const localAvatarPath = req?.files?.avatar?.[0]?.path;
-  const localCoverPath = req?.files?.coverimage?.[0]?.path || null;
-
-  if (!localAvatarPath) {
-    throw new ApiError(400, "Avatar image is required");
+  const existUserByUsername = await User.findOne({ 
+    username: normalizedUsername 
+  });
+  if (existUserByUsername) {
+    throw new ApiError(400, "Username already taken");
   }
 
-  const avatarUpload = await uploadonCloudinary(localAvatarPath);
-  const coverUpload = localCoverPath ? await uploadonCloudinary(localCoverPath) : null;
-
-  const avatar = avatarUpload?.secure_url;
-  const coverimage = coverUpload?.secure_url || "";
-
-  // 6. Create user
+  // 6. Create user with normalized values
   const newUser = await User.create({
-    username,
-    fullname,
-    email,
+    username: normalizedUsername,
+    fullname: fullname.trim(),
+    email: normalizedEmail,
     password,
-    bio,
-    avatar,
-    coverimage,
-    department,
+    bio: bio?.trim() || '',
+    department: department.trim(),
     role
   });
 
@@ -92,8 +113,8 @@ const registerUser = asyncHandler(async (req, res) => {
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "Strict",
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    sameSite: "Lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   };
 
   // 9. Send response
@@ -102,7 +123,8 @@ const registerUser = asyncHandler(async (req, res) => {
     .cookie("refreshToken", refreshToken, cookieOptions)
     .cookie("accessToken", accessToken, cookieOptions)
     .json(
-      new Apiresponse(
+      new ApiResponse(
+        201,
         {
           _id: newUser._id,
           username: newUser.username,
@@ -123,49 +145,67 @@ const registerUser = asyncHandler(async (req, res) => {
 
 
 
-// Fucntion for Login User 
+// Function for Login User 
 const LoginUser = asynchandler(async (req, res) => {
+  console.log("📥 Login API hit");
+  console.log("📥 Login request body:", req.body);
+  
   const { email, password } = req.body;
 
   // 1. Check input
   if (!email || !password) {
+    console.log("❌ Missing email or password");
     throw new ApiError(400, "Please provide both email and password");
   }
 
-  // 2. Find user by email
-  const user = await User.findOne({ email });
-  if (!user) {
-    throw new ApiError(401, "User not found with this email");
-  }
+  // 2. Normalize email (same as registration)
+  const normalizedEmail = email.trim().toLowerCase();
+  console.log("🔍 Looking for user with email:", normalizedEmail);
 
-  // 3. Check password match
-  const isMatch = await user.isPasswordCorrect(password);
-  if (!isMatch) {
+  // 3. Find user by email (case-insensitive)
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    console.log("❌ User not found for email:", normalizedEmail);
     throw new ApiError(401, "Invalid email or password");
   }
 
-  // 4. Generate Tokens
+  console.log("✅ User found:", user.username);
+
+  // 4. Check password match
+  const isMatch = await user.isPasswordCorrect(password);
+  if (!isMatch) {
+    console.log("❌ Password incorrect for user:", user.username);
+    throw new ApiError(401, "Invalid email or password");
+  }
+
+  console.log("✅ Password correct for user:", user.username);
+
+  // 5. Generate Tokens
   const { accessToken, refreshToken } = await genrateaccessandrefreshtoken(user._id);
 
-  // 5. Save refreshToken to DB (optional but secure)
+  // 6. Save refreshToken to DB
   user.refreshToken = refreshToken;
   await user.save({ validateBeforeSave: false });
 
-  // 6. Set cookies
+  console.log("✅ Tokens generated and saved for user:", user.username);
+
+  // 7. Set cookies
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "Strict",
+    sameSite: "Lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   };
 
-  // 7. Send response
+  // 8. Send response
+  console.log("📤 Sending login response for user:", user.username);
   return res
     .status(200)
     .cookie("refreshToken", refreshToken, cookieOptions)
     .cookie("accessToken", accessToken, cookieOptions)
     .json(
-      new Apiresponse(
+      new ApiResponse(
+        200,
         {
           _id: user._id,
           username: user.username,
@@ -186,7 +226,7 @@ const LoginUser = asynchandler(async (req, res) => {
 
 // Logout users 
 
-const logoutUser = asyncHandler(async (req, res) => {
+const logoutUser = asynchandler(async (req, res) => {
   // 1. Remove refreshToken from database for the user
   await User.findByIdAndUpdate(
     req.user._id,
@@ -206,7 +246,7 @@ const logoutUser = asyncHandler(async (req, res) => {
     .clearCookie("refreshtoken", cookieOptions)
     .clearCookie("accesstoken", cookieOptions)
     .status(200)
-    .json(new Apiresponse(200, {}, "User logged out successfully"));
+    .json(new  ApiResponse(200, {}, "User logged out successfully"));
 });
 
 // @desc    Change Password of logged-in user
@@ -215,19 +255,19 @@ const changepassword = asynchandler(async (req, res) => {
 
   // 1. Input validation
   if (!oldpassword || !newpassword) {
-    throw new apiError(400, "Old and new passwords are required");
+    throw new ApiError(400, "Old and new passwords are required");
   }
 
   // 2. Get user from database
   const user = await User.findById(req.user?._id);
   if (!user) {
-    throw new apiError(404, "User not found");
+    throw new ApiError(404, "User not found");
   }
 
   // 3. Check old password match
   const isPasswordCorrect = await user.isPasswordCorrect(oldpassword);
   if (!isPasswordCorrect) {
-    throw new apiError(400, "Old password is incorrect");
+    throw new ApiError(400, "Old password is incorrect");
   }
 
   // 4. Set new password
@@ -238,11 +278,11 @@ const changepassword = asynchandler(async (req, res) => {
 
   // 6. Send response
   return res.status(200).json(
-    new Apiresponse(200, {}, "Password changed successfully")
+    new  ApiResponse(200, {}, "Password changed successfully")
   );
 });
 
-const getUserProfile = asyncHandler(async (req, res) => {
+const getUserProfile = asynchandler(async (req, res) => {
   const userId = req.user._id; // middleware ne yeh add kiya
 
   const user = await User.findById(userId).select(
@@ -254,14 +294,14 @@ const getUserProfile = asyncHandler(async (req, res) => {
   }
 
   return res.status(200).json(
-    new Apiresponse(200, user, "User profile fetched successfully")
+    new  ApiResponse(200, user, "User profile fetched successfully")
   );
 });
 
 //Logged-in user ke profile details update karega (bio, fullname, department, etc.)
 //Avatar aur cover image ko Cloudinary pe re-upload bhi karega (agar naya diya ho)
 
-const updateUserProfile = asyncHandler(async (req, res) => {
+const updateUserProfile = asynchandler(async (req, res) => {
   const userId = req.user._id;
 
   // Body se updated values le lo
@@ -277,41 +317,91 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   const localAvatarPath = req.files?.avatar?.[0]?.path;
   const localCoverPath = req.files?.coverimage?.[0]?.path;
 
-  // Cloudinary upload agar nayi image aayi ho
+  // Handle avatar upload
   if (localAvatarPath) {
-    const avatarUpload = await uploadonCloudinary(localAvatarPath);
-    user.avatar = avatarUpload?.secure_url || user.avatar;
+    if (!fs.existsSync(localAvatarPath)) {
+      throw new ApiError(400, "Avatar file not found");
+    }
+
+    try {
+      const avatarUpload = await uploadonCloudinary(localAvatarPath);
+      if (avatarUpload && avatarUpload.secure_url) {
+        user.avatar = avatarUpload.secure_url;
+      } else {
+        throw new Error("Cloudinary upload failed");
+      }
+    } catch (cloudinaryError) {
+      console.log("Cloudinary not configured, using local avatar storage");
+      
+      // Fallback to local storage
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      const fileName = `avatar_${Date.now()}_${path.basename(localAvatarPath)}`;
+      const newFilePath = path.join(uploadsDir, fileName);
+      
+      fs.copyFileSync(localAvatarPath, newFilePath);
+      if (fs.existsSync(localAvatarPath)) {
+        fs.unlinkSync(localAvatarPath);
+      }
+      
+      user.avatar = `/uploads/${fileName}`;
+    }
   }
 
+  // Handle cover image upload
   if (localCoverPath) {
-    const coverUpload = await uploadonCloudinary(localCoverPath);
-    user.coverimage = coverUpload?.secure_url || user.coverimage;
+    if (!fs.existsSync(localCoverPath)) {
+      throw new ApiError(400, "Cover image file not found");
+    }
+
+    try {
+      const coverUpload = await uploadonCloudinary(localCoverPath);
+      if (coverUpload && coverUpload.secure_url) {
+        user.coverimage = coverUpload.secure_url;
+      } else {
+        throw new Error("Cloudinary upload failed");
+      }
+    } catch (cloudinaryError) {
+      console.log("Cloudinary not configured, using local cover image storage");
+      
+      // Fallback to local storage
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      const fileName = `cover_${Date.now()}_${path.basename(localCoverPath)}`;
+      const newFilePath = path.join(uploadsDir, fileName);
+      
+      fs.copyFileSync(localCoverPath, newFilePath);
+      if (fs.existsSync(localCoverPath)) {
+        fs.unlinkSync(localCoverPath);
+      }
+      
+      user.coverimage = `/uploads/${fileName}`;
+    }
   }
 
   // Update remaining fields
   if (fullname) user.fullname = fullname;
-  if (bio) user.bio = bio;
+  if (bio !== undefined) user.bio = bio; // Allow empty bio
   if (department) user.department = department;
 
-  // Save changes
-  await user.save();
+  // Save updated user
+  await user.save({ validateBeforeSave: false });
+
+  // Return updated user without sensitive fields
+  const updatedUser = await User.findById(userId).select("-password -refreshToken");
 
   return res.status(200).json(
-    new Apiresponse(200, {
-      _id: user._id,
-      username: user.username,
-      fullname: user.fullname,
-      bio: user.bio,
-      avatar: user.avatar,
-      coverimage: user.coverimage,
-      department: user.department,
-      email: user.email,
-      role: user.role
-    }, "Profile updated successfully")
+    new ApiResponse(200, updatedUser, "Profile updated successfully")
   );
 });
 
-const deleteAccount = asyncHandler(async (req, res) => {
+const deleteAccount = asynchandler(async (req, res) => {
   const userId = req.user._id;
 
   // Check if user exists
@@ -337,10 +427,10 @@ const deleteAccount = asyncHandler(async (req, res) => {
     .clearCookie("accessToken", cookieOptions)
     .clearCookie("refereshToken", cookieOptions)
     .json(
-      new Apiresponse(200, {}, "Your account has been deleted successfully.")
+      new  ApiResponse(200, {}, "Your account has been deleted successfully.")
     );
 });
-const refreshAccessToken = asyncHandler(async (req, res) => {
+const refreshAccessToken = asynchandler(async (req, res) => {
   const incomingRefreshToken = req.cookies?.refereshToken;
 
   if (!incomingRefreshToken) {
@@ -377,7 +467,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     .cookie("accessToken", accessToken, cookieOptions)
     .cookie("refereshToken", refreshToken, cookieOptions)
     .json(
-      new Apiresponse(200, {
+      new  ApiResponse(200, {
         accessToken,
         refreshToken
       }, "Token refreshed successfully")
@@ -397,14 +487,14 @@ const getAllUsers =  asynchandler(async (req, res) => {
   
      // return response
      return res.status(200).json(
-       new Apiresponse( 200,{
+       new  ApiResponse( 200,{
             totalUsers: users.length,
             users,
         }
 , "All users fetched successfully"))
 })
 
-const searchUsers = asyncHandler(async (req, res) => {
+const searchUsers = asynchandler(async (req, res) => {
   const { keyword = "", role, department } = req.query;
 
   // Step 1: Create a filter object
@@ -436,7 +526,7 @@ const searchUsers = asyncHandler(async (req, res) => {
 
   // Step 3: Return result
   return res.status(200).json(
-    new Apiresponse(
+    new  ApiResponse(
       200,
       {
         totalResults: users.length,
